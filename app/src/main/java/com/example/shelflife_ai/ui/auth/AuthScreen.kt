@@ -32,12 +32,12 @@ fun AuthScreen(
     onAuthSuccess: () -> Unit
 ) {
     val context = LocalContext.current
-    val activity = context as? Activity
     val coroutineScope = rememberCoroutineScope()
     val authState by viewModel.authState.collectAsState()
 
     var isRegisterTab by remember { mutableStateOf(false) }
 
+    var username by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("+51 ") }
     var displayName by remember { mutableStateOf("") }
@@ -143,9 +143,20 @@ fun AuthScreen(
 
             if (isRegisterTab) {
                 OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it.filter { char -> !char.isWhitespace() } },
+                    label = { Text("Nombre de Usuario (Obligatorio)") },
+                    leadingIcon = { Icon(Icons.Default.AccountBox, contentDescription = null) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
                     value = displayName,
                     onValueChange = { displayName = it },
-                    label = { Text("Nombre(s) y Apellidos") },
+                    label = { Text("Nombre(s) y Apellidos (Opcional)") },
                     leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
@@ -252,6 +263,7 @@ fun AuthScreen(
                     onClick = {
                         if (isRegisterTab) {
                             viewModel.registerWithEmail(
+                                username = username,
                                 email = email,
                                 phone = phone,
                                 displayName = displayName,

@@ -41,6 +41,7 @@ class AuthViewModel : ViewModel() {
     }
 
     fun registerWithEmail(
+        username: String,
         email: String,
         phone: String,
         displayName: String,
@@ -48,6 +49,16 @@ class AuthViewModel : ViewModel() {
         confirmPassword: String,
         termsAccepted: Boolean
     ) {
+        val cleanUsername = username.trim().lowercase()
+
+        if (cleanUsername.isBlank()) {
+            _authState.value = AuthState.Error("El nombre de usuario es obligatorio.")
+            return
+        }
+        if (cleanUsername.contains(" ")) {
+            _authState.value = AuthState.Error("El nombre de usuario no puede contener espacios.")
+            return
+        }
         if (!termsAccepted) {
             _authState.value = AuthState.Error("Debes aceptar los términos y condiciones.")
             return
@@ -68,6 +79,18 @@ class AuthViewModel : ViewModel() {
         viewModelScope.launch {
             _authState.value = AuthState.Loading
             try {
+                // 1. Validar nombre de usuario único en Firestore
+                val existingUsers = firestore.collection("users")
+                    .whereEqualTo("usernameLower", cleanUsername)
+                    .get()
+                    .await()
+
+                if (!existingUsers.isEmpty) {
+                    _authState.value = AuthState.Error("Este nombre de usuario ya está en uso.")
+                    return@launch
+                }
+
+                // 2. Crear cuenta en Firebase Auth
                 val result = auth.createUserWithEmailAndPassword(email, password).await()
                 val user = result.user
 
@@ -75,16 +98,18 @@ class AuthViewModel : ViewModel() {
                     user.sendEmailVerification()
                     val defaultAvatar = "https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}"
 
-                    val newUser = UserModel(
-                        uid = user.uid,
-                        email = email,
-                        phone = phone,
-                        displayName = displayName.ifBlank { email.substringBefore("@") },
-                        photoUrl = defaultAvatar,
-                        createdAt = System.currentTimeMillis()
+                    val newUserMap = mapOf(
+                        "uid" to user.uid,
+                        "username" to username.trim(),
+                        "usernameLower" to cleanUsername,
+                        "email" to email,
+                        "phone" to phone,
+                        "displayName" to displayName.ifBlank { username.trim() },
+                        "photoUrl" to defaultAvatar,
+                        "createdAt" to System.currentTimeMillis()
                     )
 
-                    firestore.collection("users").document(user.uid).set(newUser, SetOptions.merge()).await()
+                    firestore.collection("users").document(user.uid).set(newUserMap, SetOptions.merge()).await()
                     _authState.value = AuthState.Success("Registro exitoso. Se envió un correo de verificación.")
                 } else {
                     _authState.value = AuthState.Error("Error al registrar el usuario.")
@@ -121,11 +146,13 @@ class AuthViewModel : ViewModel() {
                 val user = result.user
 
                 if (user != null) {
+                    val defaultUsername = user.email?.substringBefore("@") ?: "user_${user.uid.take(5)}"
                     saveUserIfNotExists(
                         uid = user.uid,
+                        username = defaultUsername,
                         email = user.email ?: "",
                         phone = user.phoneNumber ?: "",
-                        displayName = user.displayName ?: "Usuario Google",
+                        displayName = user.displayName ?: defaultUsername,
                         photoUrl = user.photoUrl?.toString() ?: "https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}"
                     )
                     _authState.value = AuthState.Success("Inicio de sesión con Google exitoso.")
@@ -188,8 +215,10 @@ class AuthViewModel : ViewModel() {
                 val user = result.user
 
                 if (user != null) {
+                    val defaultUsername = "user_${user.uid.take(6)}"
                     saveUserIfNotExists(
                         uid = user.uid,
+                        username = defaultUsername,
                         email = user.email ?: "",
                         phone = user.phoneNumber ?: "",
                         displayName = "Usuario SMS",
@@ -205,6 +234,7 @@ class AuthViewModel : ViewModel() {
 
     private suspend fun saveUserIfNotExists(
         uid: String,
+        username: String,
         email: String,
         phone: String,
         displayName: String,
@@ -212,15 +242,17 @@ class AuthViewModel : ViewModel() {
     ) {
         val userDoc = firestore.collection("users").document(uid).get().await()
         if (!userDoc.exists()) {
-            val newUser = UserModel(
-                uid = uid,
-                email = email,
-                phone = phone,
-                displayName = displayName,
-                photoUrl = photoUrl,
-                createdAt = System.currentTimeMillis()
+            val newUserMap = mapOf(
+                "uid" to uid,
+                "username" to username,
+                "usernameLower" to username.lowercase(),
+                "email" to email,
+                "phone" to phone,
+                "displayName" to displayName,
+                "photoUrl" to photoUrl,
+                "createdAt" to System.currentTimeMillis()
             )
-            firestore.collection("users").document(uid).set(newUser, SetOptions.merge()).await()
+            firestore.collection("users").document(uid).set(newUserMap, SetOptions.merge()).await()
         }
     }
 }

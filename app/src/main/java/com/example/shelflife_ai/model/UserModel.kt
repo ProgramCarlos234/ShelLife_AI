@@ -2,6 +2,7 @@ package com.example.shelflife_ai.model
 
 data class UserModel(
     val uid: String = "",
+    val username: String = "",
     val email: String = "",
     val phone: String = "",
     val displayName: String = "",
